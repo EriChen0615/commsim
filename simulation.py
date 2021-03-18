@@ -24,13 +24,14 @@ class CommSim:
     """
     Simulate communication with carrier synchronization
     """
-    def __init__(self, mod, demod, pf, channel, lp, cs, eq=None, fc=10000, fs=44100):
+    def __init__(self, mod, demod, pf, channels, cfs, lp, cs, eq=None, fc=10000, fs=44100):
         """
         @parameters:
         - mod:      an object of Modulator
         - demod:    an object of Demodulator
         - pf:       an object of PulseFilter
-        - channel:  an object of Channel
+        - channels: a list of Channel objects
+        - cfs:      an object of Coarse Frequency Synchronizer
         - lp:       a lowpass filter object
         - cs:       a carrier synchronizer
         - eq:       equaliser object
@@ -40,7 +41,7 @@ class CommSim:
         self.mod = mod
         self.demod = demod
         self.pf = pf
-        self.channel = channel
+        self.channels = channels
         self.Fc = fc
         self.Fs = fs
         self.d_true = []
@@ -50,12 +51,26 @@ class CommSim:
         self.eq = eq
         self.lp = lp
         self.cs = cs
+        self.cfs = cfs
 
-    def transmit(self, data, cs_enable=True, eq_enable=True, verbose=True):
+    def pass_through_channel(self, x, noiseless=False, freqOff=True):
+        y = x
+        for ch in self.channels:
+            if noiseless and ch.name == "AWGN":
+                continue
+            elif not freqOff and ch.name == "FrequencyOffset":
+                continue 
+            else:
+                y = ch.pass_through(y)
+        return y
+        
+
+    def transmit(self, data, f0=0, cfs_enable=True, cs_enable=True, eq_enable=True, verbose=True):
         """
         simulate data transmission through the system.
         @parameters:
         - data: data array to be transmitted (must be compatible with modulation scheme)
+        - f0: the frequency offset in Hz, model impecfection in the transmitter
         - cs_enable: bool, enable the use of carrierSynchronisation
         - eq_enable: bool, enable the use of equaliser (it will be designed anyways)
         - verbose: display results and graphs
@@ -64,8 +79,8 @@ class CommSim:
         # preamble begin
         if cs_enable:
             d_pre = np.random.randint(self.mod.M, size=20)
-            self.transmit(d_pre, cs_enable=False, eq_enable=False, verbose=False) # shouldn't use eq: it's not designed!
-            self.cs.syncPhase(self.demod_symbol, self.true_symbol)
+            self.transmit(d_pre, cfs_enable=False, cs_enable=False, eq_enable=False, verbose=False) # shouldn't use eq: it's not designed!
+            self.cs.syncPhase(self.demod_symbol, true_symbol=self.true_symbol)
             
             if eq: # using an equaliser, the step is only performed after cs is done (otherwise pointless)
                 x_true = np.zeros(self.eq.gL)
@@ -73,7 +88,7 @@ class CommSim:
                 x_base = self.pf.modFilter(x_true)
                 x_pass = tx.mult_cos_carrier(x_base.real, self.Fc, self.Fs)
                 
-                y_pass = self.channel.pass_through(x_pass, noiseless=True) # we don't want the noise to affect our 'theoretical effective filter'
+                y_pass = self.pass_through_channel(x_pass, noiseless=True, freqOff=False) # we don't want the noise to affect our 'theoretical effective filter'
                 
                 yr_base = tx.mult_cos_carrier(y_pass, self.Fc, self.Fs)
                 yi_base = tx.mult_sin_carrier(y_pass, self.Fc, self.Fs) 
@@ -96,23 +111,29 @@ class CommSim:
         # transmitter end
 
         # channel begin
-        y_pass = self.channel.pass_through(x_pass)
+        y_pass = self.pass_through_channel(x_pass)
         # channel end
 
         # receiver begin
-        yr_base = tx.mult_cos_carrier(y_pass, self.Fc, self.Fs)
-        yi_base = tx.mult_sin_carrier(y_pass, self.Fc, self.Fs)
+        yr_base = tx.mult_cos_carrier(y_pass, self.Fc, self.Fs, f0=f0)
+        yi_base = tx.mult_sin_carrier(y_pass, self.Fc, self.Fs, f0=f0) # notice we may have frequency offset here
 
         yr_lp = self.lp.filter(yr_base)
         yi_lp = self.lp.filter(yi_base) # we compensate for the delay in the filter
 
-        yr_demo = self.pf.demodFilter(yr_lp) # 20 is order of low pass filter, we do need gain to counter the attenuation
-        yi_demo = self.pf.demodFilter(yi_lp) # also the filter introduces a phase delay
 
-        yr_rec = self.eq.equalise(yr_demo) if self.eq and eq_enable else yr_demo
-        yi_rec = self.eq.equalise(yi_demo) if self.eq and eq_enable else yi_demo
+        yr_q = self.pf.demodFilter(yr_base) # 20 is order of low pass filter, we do need gain to counter the attenuation
+        yi_q = self.pf.demodFilter(yi_base) # also the filter introduces a phase delay
+
+        (yr_fsync, yi_fsync) = self.cfs.syncFreq(yr_q , yi_q) if cfs_enable else (yr_q, yi_q)
+
+        yr_matched = rx.match_filter(yr_fsync, len(data), self.pf.symbol_period)
+        yi_matched = rx.match_filter(yi_fsync, len(data), self.pf.symbol_period)
+
+        yr_demo = self.eq.equalise(yr_matched) if self.eq and eq_enable else yr_matched
+        yi_demo= self.eq.equalise(yi_matched) if self.eq and eq_enable else yi_matched
         
-        self.demod_symbol = np.array([complex(r, i) for r, i in zip(yr_rec, yi_rec)]) # we "export" this to be used in carrier synchronisation
+        self.demod_symbol = np.array([complex(r, i) for r, i in zip(yr_demo, yi_demo)]) # we "export" this to be used in carrier synchronisation
         if cs_enable:
             self.demod_symbol = self.cs.correctPhase(self.demod_symbol)
 
@@ -131,12 +152,13 @@ class CommSim:
 
             yr = [y.real for y in self.demod_symbol]
             yi = [y.imag for y in self.demod_symbol]
+            print("Coarse Frequency Shift(Hz): ", self.cfs.f0)
             print("Carrier Phase Compensation(radian): ", self.cs.phi)
             print(d_true[:10])
             print(d_pred[:10])
             print("Error Rate: ",get_error_rate(d_true, d_pred))
         
-            fig, ax = plt.subplots(3,2, figsize=(20, 16))
+            fig, ax = plt.subplots(4,2, figsize=(20, 16))
             fig.tight_layout()
 
             ax[0][0].plot(x_true.real[:10], 'o', label="True (real)")
@@ -175,10 +197,23 @@ class CommSim:
             ax[2][0].set_title('Before and after channel')
             ax[2][0].legend()
             
-            if self.eq:
+           
+            N = self.mod.M
+            y = yr_q + -1j*yi_q
+            y_sq = y ** N
+            psd_sq = np.fft.fftshift(np.abs(np.fft.fft(y_sq)))
+            f = np.linspace(-self.Fs/2.0, self.Fs/2.0, len(psd_sq))
+            ax[3][0].plot(f, psd_sq)
+            ax[3][0].set_title(f"Spectrum After Raised to ${N}$ th Power")
+               
+            y_fsync = yr_fsync - 1j*yi_fsync
+            psd = np.fft.fftshift(np.abs(np.fft.fft(y_fsync**N)))
+            f = np.linspace(-self.Fs/2.0, self.Fs/2.0, len(psd))
+            ax[3][1].plot(f, psd)
+            ax[3][1].set_title(f"Spectrum After Coarse Frequency Sync (Raised {N})")
+
+            if self.eq and not self.eq.get_g() is None:
                 ax[2][1].plot(self.eq.get_g(), 'o')
-            else:
-                ax[2][1].plot(eq.compute_effective_filter(self.pf, self.channel.h))
             ax[2][1].grid(True)
             ax[2][1].set_title('Effective Filter')
 

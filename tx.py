@@ -29,7 +29,36 @@ def generate_data(N, p1=0.5):
     d = np.random.rand(N)
     return np.where(d<=p1, 1, 0)
 
-class QAM_SymbolMod:
+class _Modulator:
+    """
+    Base Class for modulator
+    """
+    def __init__(self):
+        self.symbols = []
+
+    def modulate(self, data):
+        """
+        @parameters:
+        - data: list of integer from [0, log2(M)), data to be converted to QAM constellation
+        """
+        return np.array([self.symbols[d] for d in data])
+
+class PSK_SymbolMod(_Modulator):
+    """
+    Class reprensting the Phase Shift Keying Modulation
+    """
+    def __init__(self, M):
+        """
+        @parameters:
+        - M: interger, number of PSK constellations
+        """
+        assert (M != 0) and (M & (M-1) == 0) # M must be a power of 2
+        self.M = M
+        phi = np.arange(0, 2*np.pi, 2*np.pi/M)
+        self.symbols = np.exp(1j*phi)
+
+
+class QAM_SymbolMod(_Modulator):
     """
     Class representing Quadrature Amplitude Modulation
     """
@@ -49,16 +78,6 @@ class QAM_SymbolMod:
             self.constellations[p][q] = np.cdouble(complex((-n/2+0.5) + p, (-n/2+0.5) + q))
             self.constellations *= d
         self.symbols = np.reshape(self.constellations, -1)
-
-    def modulate(self, data):
-        """
-        @parameters:
-        - data: list of integer from [0, log2(M)), data to be converted to QAM constellation
-        """
-        return np.array([self.symbols[d] for d in data])
-    
-    def mult_carrier(self, data, fc, fs=44100):
-        return mult_sin_carrier(data.imag, fc, fs) + mult_cos_carrier(data.real, fc, fs)
 
 class RRCPulseFilter:
     """
@@ -129,37 +148,36 @@ class RRCPulseFilter:
         - xb: digital baseband signal
         """
         xp = np.convolve(x, self.filter)[2*self.L:] # note that we account for the delay of demodulation here.
-        n = len(xp) // self.symbol_period
-        xm = []
-        for i in range(n):
-            xm.append(xp[i*self.symbol_period])
-        return np.array(xm)
+        return xp
+        
         
 
-def mult_sin_carrier(xb, fc, fs, sqrt2=True):
+def mult_sin_carrier(xb, fc, fs, f0=0, sqrt2=True):
     """
     multiply the signal by a sine carrier at to up-convert to fc
     @parameters:
     - xb: baseband signal
     - fc: carrier frequency in Hz
+    - f0: frequency offset
     - fs: sampling frequency of the system (e.g., for audio could be at 44.1kHz)
     """
     k = np.arange(len(xb))
-    carrier = -np.sin(2*np.pi*fc * (k / fs))
+    carrier = -np.sin(2*np.pi*(fc+f0) * (k / fs))
     if sqrt2:
         carrier *= np.sqrt(2)
     return xb * carrier
 
-def mult_cos_carrier(xb, fc, fs, sqrt2=True):
+def mult_cos_carrier(xb, fc, fs, f0=0, sqrt2=True):
     """
     multiply the signal by a sine carrier at to up-convert to fc
     @parameters:
     - xb: baseband signal
     - fc: carrier frequency in Hz
+    - f0: frequency offset
     - fs: sampling frequency of the system (e.g., for audio could be at 44.1kHz)
     """
     k = np.arange(len(xb))
-    carrier = np.cos(2*np.pi*fc * (k / fs))
+    carrier = np.cos(2*np.pi*(fc+f0) * (k / fs))
     if sqrt2:
         carrier *= np.sqrt(2)
     return xb * carrier
