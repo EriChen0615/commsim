@@ -43,10 +43,11 @@ class TimeDelay_Channel:
         """
         self.name = "TimeDelay"
         self.delay = delay
-        N = 21 # number of taps of the delay filter
+        N = 51 # number of taps of the delay filter
         n = np.arange(N) # 0,1,2,3...
         h = np.sinc(n - self.delay) # calc filter taps
         h *= np.hamming(N) # window the filter to make sure it decays to 0 on both sides
+        # h *= np.blackman(N)
         self.h = h / np.sum(h) # normalize to get unity gain, we don't want to change the amplitude/power
 
     def pass_through(self, x):

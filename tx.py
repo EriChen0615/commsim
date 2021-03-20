@@ -53,6 +53,7 @@ class PSK_SymbolMod(_Modulator):
         - M: interger, number of PSK constellations
         """
         assert (M != 0) and (M & (M-1) == 0) # M must be a power of 2
+        self.name = "PSK"
         self.M = M
         phi = np.arange(0, 2*np.pi, 2*np.pi/M)
         self.symbols = np.exp(1j*phi)
@@ -62,7 +63,7 @@ class QAM_SymbolMod(_Modulator):
     """
     Class representing Quadrature Amplitude Modulation
     """
-    def __init__(self, M, d=1):
+    def __init__(self, M, d=np.sqrt(2)):
         """
         @parameters:
         - M: integer, number of constellations. Should be a power of 2
@@ -70,13 +71,14 @@ class QAM_SymbolMod(_Modulator):
         """
         assert (M != 0) and (M & (M-1) == 0) # M must be a power of 2
         self.M = M
+        self.name = 'QAM'
         n = int(np.sqrt(M))
         self.n = n
         self.constellations = np.zeros((n, n), dtype=np.cdouble)
         self.symbols = []
         for p, q in itertools.product(np.arange(n), np.arange(n)):
             self.constellations[p][q] = np.cdouble(complex((-n/2+0.5) + p, (-n/2+0.5) + q))
-            self.constellations *= d
+            self.constellations[p][q] *= d
         self.symbols = np.reshape(self.constellations, -1)
 
 class RRCPulseFilter:
@@ -150,7 +152,19 @@ class RRCPulseFilter:
         xp = np.convolve(x, self.filter)[2*self.L:] # note that we account for the delay of demodulation here.
         return xp
         
-        
+class SquarePulseFilter:
+    """
+    Class for Root Raised Consine Pulse Filter in digital domain
+    """      
+    def __init__(self, symbol_period):
+        self.symbol_period = symbol_period
+    
+    def modFilter(self, x):
+        xb = np.zeros(len(x)*self.symbol_period).astype(np.cdouble)
+        for i, c in enumerate(x):
+            for j in range(self.symbol_period):
+                xb[i*self.symbol_period+j] = c
+        return xb
 
 def mult_sin_carrier(xb, fc, fs, f0=0, sqrt2=True):
     """
