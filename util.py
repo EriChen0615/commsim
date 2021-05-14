@@ -1,3 +1,6 @@
+import numpy as np
+import scipy.signal as signal
+
 class RRCPulseFilter:
     """
     Class for Root Raised Consine Pulse Filter in digital domain

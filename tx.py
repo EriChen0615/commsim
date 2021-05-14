@@ -32,7 +32,7 @@ def generate_data(N, p1=0.5):
     return np.where(d<=p1, 1, 0)
 
 class Transmitter:
-    def __init__(self, Fs=44100, Fc=3000, Ts=0.01, ModScheme="QAM", ModPara={'M':4}, CodeScheme='', codePara={}):
+    def __init__(self, Fs=44100, Fc=3000, Ts=0.01, ModScheme="QAM", ModPara={'M':4}, CodeScheme='', CodePara={}):
         """
         A transmitter consists of a `encoder`, a `modulator` and a `pulseFilter` 
 
@@ -52,7 +52,7 @@ The default constructor of a simulation system is
         self.Fs = Fs
         self.Fc = Fc
         self.Ts = Ts
-        self.sps = ceil(self.Fs * self.Ts) # span for the pulseFilter
+        self.sps = int(self.Fs * self.Ts) # span for the pulseFilter
 
         self.encoder = None # encoder TODO
 
@@ -71,7 +71,7 @@ The default constructor of a simulation system is
         - d_raw: data to transmit, take value from 0 to M-1
         """
         x_true = self.mod.modulate(d_raw)
-        x_base = self.pf.modFilter(x_true)
+        x_base = self.pulseFilter.modFilter(x_true)
         x_pass = mult_sin_carrier(x_base.imag, self.Fc, self.Fs) + mult_cos_carrier(x_base.real, self.Fc, self.Fs)
         return x_pass
         

@@ -46,7 +46,13 @@ class Receiver:
         self.Fs = Fs
         self.Fc = Fc
         self.Ts = Ts
-        self.sps = floor(self.Fs * self.Ts) # span for the pulseFilter
+        self.sps = int(self.Fs * self.Ts) # span for the pulseFilter
+
+        # Demodulator
+        if ModScheme == "QAM":
+            self.demod = QAM_SymbolDemod(ModPara['M'])
+        elif ModScheme == "PSK":
+            self.demod = QAM_SymbolDemod(ModPara['M'])
 
         self.lowpassFilter = LP_Filter(np.arange(0,0.5/Ts,100), fcut=1.2/Ts, order=5, Fs=self.Fs)
         self.pulseFilter = RRCPulseFilter(0.35, self.sps, 5*self.sps) # default beta = 0.35, make variable later
@@ -55,11 +61,7 @@ class Receiver:
         self.coarseSync = CoarseFreqSync(self.demod, self.Fs)
         self.fineSync = CarrierSync()
         
-        # Demodulator
-        if ModScheme == "QAM":
-            self.demod = QAM_SymbolDemod(ModPara['M'])
-        elif ModScheme == "PSK":
-            self.demod = QAM_SymbolDemod(ModPara['M'])
+
 
     def receive(self, y_raw, n):
         '''
@@ -78,19 +80,21 @@ class Receiver:
         yi_lp = self.lowpassFilter.filter(yi_base) # we compensate for the delay in the filter
 
         # 3. Pass through pulse filter
-        yr_q = self.pf.demodFilter(yr_base) # 20 is order of low pass filter, we do need gain to counter the attenuation
-        yi_q = self.pf.demodFilter(yi_base) # also the filter introduces a phase delay
+        yr_q = self.pulseFilter.demodFilter(yr_base) # 20 is order of low pass filter, we do need gain to counter the attenuation
+        yi_q = self.pulseFilter.demodFilter(yi_base) # also the filter introduces a phase delay
 
         # 4. Coarse Frequency Correction
-        (yr_fsync, yi_fsync) = self.cfs.syncFreq(yr_q , yi_q) if cfs_enable else (yr_q, yi_q)
-        
+        # (yr_fsync, yi_fsync) = self.coarseSync.syncFreq(yr_q , yi_q)
+        (yr_fsync, yi_fsync) = (yr_q , yi_q)
+
         # 5. Recover Symbols with matched filter
         yr_matched = match_filter(yr_fsync, n, self.sps) 
         yi_matched = match_filter(yi_fsync, n, self.sps)
         self.demod_symbol = np.array([complex(r, i) for r, i in zip(yr_matched, yi_matched)]) # we "export" this to be used in carrier synchronisation
 
         # 6. Fine Frequency Synchronization
-        y_cs = self.fineSync(self.demod_symbol)
+        # y_cs = self.fineSync.syncPhase(self.demod_symbol)
+        y_cs = self.demod_symbol
 
         # 7. Demodulation
         d_rec = self.demod.demodulate(y_cs)

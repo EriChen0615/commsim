@@ -1,3 +1,6 @@
+import numpy as np
+import itertools
+
 class _Modulator:
     """
     Base Class for modulator
