@@ -1,3 +1,5 @@
+import numpy as np
+
 class CarrierSync:
     """
     This clss implements a carrier synchronizer based on a digital version of PLL
@@ -40,7 +42,7 @@ class CarrierSync:
                     if self.phi > 2*np.pi:
                         self.phi -= 2*np.pi
                     corrected.append(x_pred * np.exp(1j*self.phi)) # correction
-        return corrected
+        return np.array(corrected)
 
     def correctPhase(self, demo_x):
         return demo_x * np.exp(1j*self.phi)

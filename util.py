@@ -134,3 +134,6 @@ class LP_Filter:
         """
         y = signal.sosfilt(self.sos, x)
         return self.K*y[self.lag:]
+
+def merge2complex(r, i):
+    return np.array([complex(r, i) for r, i in zip(r,  i)])

@@ -274,7 +274,7 @@ from channel import AWGN_Channel, Custom_Channel, TimeDelay_Channel
 #         return get_error_rate(d_true, d_pred)
 
 class Sim:
-    def __init__(self, Fs=44100, Fc=3000, Ts=0.001, Channel=AWGN_Channel(20), ModScheme="QAM", ModPara={'M':4}, CodeScheme='', CodePara={}):
+    def __init__(self, Fs=44100, Fc=3000, Ts=0.001, Channel=[AWGN_Channel(20)], ModScheme="QAM", ModPara={'M':4}, CodeScheme='', CodePara={}):
         """
         | Hyper Parameter       | Symbol       | Value                       | Note                          |
 | :-------------------- | ------------ | --------------------------- | ----------------------------- |
@@ -292,14 +292,56 @@ class Sim:
         self.channel = Channel
         self.rx = Receiver(Fs=Fs, Fc=Fc, Ts=Ts, ModScheme=ModScheme, ModPara=ModPara, CodeScheme=CodeScheme, CodePara=CodePara)
 
-    def transmit(self, N):
+    def transmit(self, N, analytics=True):
         """
         Transmit N data points that are randomly generated
         """
-        data = np.random.randint(low=0,high=self.tx.mod.M,size=N)
+        data = np.random.randint(low=0, high=self.tx.mod.M, size=N)
         x_pass = self.tx.send(data)
-        y_pass = self.channel.pass_through(x_pass)
+        y_pass = x_pass
+        for ch in self.channel:
+            y_pass = ch.pass_through(y_pass)
         data_rec = self.rx.receive(y_pass, len(data))
+
+        if analytics:
+            print("Coarse Frequency Offset: ", self.rx.log['coarseFreq'])
+            d_true = data
+            d_pred = data_rec
+            x_symbols = self.tx.log['x_true']
+            y_symbols = self.rx.log['y_cs']
+            x_pass = self.tx.log['x_pass']
+            y_pass = self.rx.log['y_pass']
+            y_match = self.rx.log['y_match']
+
+            colors = ['b', 'g', 'r', 'c']
+
+            fig, ax = plt.subplots(5, 2, figsize=(16, 30))
+            for i in range(self.tx.mod.M):
+                ax[0][0].scatter(y_match.real[d_true==i], y_match.imag[d_true==i], color=colors[i])
+                ax[0][0].scatter(self.tx.mod.symbols[i].real, self.tx.mod.symbols[i].imag, marker='x', color=colors[i])
+
+                ax[0][1].scatter(self.tx.mod.symbols[i].real, self.tx.mod.symbols[i].imag, marker='x', color=colors[i])
+                ax[0][1].scatter(y_symbols.real[d_true==i], y_symbols.imag[d_true==i], color=colors[i])
+                pred_center = np.mean(y_symbols[d_true==i])
+                ax[0][1].plot([0, pred_center.real], [0, pred_center.imag], colors[i])
+
+            # ax[0][1].scatter(yr, yi, label="Received")
+            # ax[0][1].scatter(x_coord, y_coord, label="True")
+            ax[0][0].grid(True)
+            ax[0][0].axhline(y=0, color='k')
+            ax[0][0].axvline(x=0, color='k')
+            ax[0][0].set_title('Signal Space Projection (Before Frequency Sync)' )
+            ax[0][0].set_xlim(-1.2, 1.2)
+            ax[0][0].set_ylim(-1.2, 1.2)
+
+            ax[0][1].grid(True)
+            ax[0][1].axhline(y=0, color='k')
+            ax[0][1].axvline(x=0, color='k')
+            ax[0][1].set_title('Signal Space Projection (After Frequency Sync)')
+            ax[0][1].set_xlim(-1.2, 1.2)
+            ax[0][1].set_ylim(-1.2, 1.2)
+            # ax[0][1].legend()
+            plt.show()
 
         return (data, data_rec)
 

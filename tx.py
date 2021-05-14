@@ -64,8 +64,10 @@ The default constructor of a simulation system is
         
         # Pulse Filter
         self.pulseFilter = RRCPulseFilter(0.35, self.sps, 5*self.sps) # default beta = 0.35, make variable later
-    
-    def send(self, d_raw):
+
+        self.log = {}
+
+    def send(self, d_raw, logging=True):
         """
         turn raw data into modulated passband signal
         - d_raw: data to transmit, take value from 0 to M-1
@@ -73,6 +75,12 @@ The default constructor of a simulation system is
         x_true = self.mod.modulate(d_raw)
         x_base = self.pulseFilter.modFilter(x_true)
         x_pass = mult_sin_carrier(x_base.imag, self.Fc, self.Fs) + mult_cos_carrier(x_base.real, self.Fc, self.Fs)
+
+        if logging:
+            self.log['x_true'] = x_true
+            self.log['x_base'] = x_base
+            self.log['x_pass'] = x_pass
+
         return x_pass
         
 

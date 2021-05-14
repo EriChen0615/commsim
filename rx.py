@@ -19,7 +19,7 @@ import itertools
 import scipy.signal as signal
 from modulation import QAM_SymbolDemod, PSK_SymbolDemod
 from sync import CoarseFreqSync, CarrierSync
-from util import RRCPulseFilter, LP_Filter, mult_cos_carrier, mult_sin_carrier
+from util import RRCPulseFilter, LP_Filter, mult_cos_carrier, mult_sin_carrier, merge2complex
 
 class Receiver:
     """
@@ -60,10 +60,12 @@ class Receiver:
         # synchronizers
         self.coarseSync = CoarseFreqSync(self.demod, self.Fs)
         self.fineSync = CarrierSync()
+
+        self.log = {}
         
 
 
-    def receive(self, y_raw, n):
+    def receive(self, y_raw, n, logging=True):
         '''
         @parameters:
         - y_rx: signal passed through the channel
@@ -93,11 +95,21 @@ class Receiver:
         self.demod_symbol = np.array([complex(r, i) for r, i in zip(yr_matched, yi_matched)]) # we "export" this to be used in carrier synchronisation
 
         # 6. Fine Frequency Synchronization
-        # y_cs = self.fineSync.syncPhase(self.demod_symbol)
-        y_cs = self.demod_symbol
+        y_cs = self.fineSync.syncPhase(self.demod_symbol)
+        # y_cs = self.demod_symbol
 
         # 7. Demodulation
         d_rec = self.demod.demodulate(y_cs)
+
+        if logging:
+            self.log['y_pass'] = y_raw
+            self.log['y_base'] = merge2complex(yr_base, yi_base)
+            self.log['y_q'] = merge2complex(yr_q, yi_q) # after applying pulse filter
+            self.log['y_cfs'] = merge2complex(yr_fsync, yi_fsync) # after coarse frequency sync
+            self.log['y_match'] = merge2complex(yr_matched, yi_matched)
+            self.log['y_cs'] = y_cs # after carrier synchronization
+            self.log['d_rec'] = d_rec
+            self.log['coarseFreq'] = self.coarseSync.f0
 
         return d_rec
         # if cs_enable:
